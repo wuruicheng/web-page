@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>个人主页 · 吴瑞成</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ① 顶部导航 -->
+  <header class="site-header">
+    <nav class="nav container">
+      <a href="#home" class="nav-logo">吴瑞成</a>
+      <button class="nav-toggle" id="navToggle" type="button" aria-label="切换导航菜单">☰</button>
+      <ul class="nav-menu" id="navMenu">
+        <li><a href="#home" class="nav-link">首页</a></li>
+        <li><a href="#education" class="nav-link">教育背景</a></li>
+        <li><a href="#projects" class="nav-link">项目经历</a></li>
+        <li><a href="#skills" class="nav-link">技能</a></li>
+        <li><a href="#contact" class="nav-link">联系方式</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <!-- ② 首屏 -->
+  <section id="home" class="hero">
+    <div class="container hero-inner">
+      <div class="hero-text">
+        <h1 class="hero-name">吴瑞成</h1>
+        <p class="hero-tagline">嵌入式开发岗 + 27届 + 用 AI 三周做了 5 个上线项目。</p>
+        <div class="hero-actions">
+          <a href="#projects" class="btn btn-primary">查看项目</a>
+          <a href="#contact" class="btn btn-outline">联系我</a>
+        </div>
+      </div>
+      <div class="avatar" aria-hidden="true">
+        <span>吴</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ③ 教育背景 -->
+  <section id="education" class="section">
+    <div class="container">
+      <h2 class="section-title">教育背景</h2>
+      <div class="edu-card">
+        <div>
+          <h3 class="edu-school">金陵科技学院</h3>
+          <p class="edu-major">计算机科学与技术 · 本科</p>
+        </div>
+        <div class="edu-meta">
+          <p>时间：2026 届</p>
+          <p>主修课程：网页设计与制作、C 语言程序设计、算法与数据结构、计算机系统基础、面向对象程序设计、操作系统、数据库原理与应用、安卓系统开发、Linux 系统应用与开发、嵌入式系统基础</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ④ 项目经历 -->
+  <section id="projects" class="section section-alt">
+    <div class="container">
+      <h2 class="section-title">项目经历</h2>
+      <div class="project-grid">
+        <article class="project-card">
+          <h3 class="project-title">嵌入式智能饮水机</h3>
+          <p class="project-desc">使用 Keil 与 STM32 完成嵌入式智能饮水机</p>
+          <ul class="project-tags">
+            <li class="tag">Keil</li>
+            <li class="tag">STM32</li>
+            <li class="tag">C语言</li>
+          </ul>
+        </article>
+        <article class="project-card">
+          <h3 class="project-title">教务管理系统</h3>
+          <p class="project-desc">使用 Python 完成教务管理系统网页设计</p>
+          <ul class="project-tags">
+            <li class="tag">Python</li>
+            <li class="tag">网页设计</li>
+          </ul>
+        </article>
+        <article class="project-card">
+          <h3 class="project-title">坦克大战小游戏</h3>
+          <p class="project-desc">使用 Java 完成编写坦克大战小游戏</p>
+          <ul class="project-tags">
+            <li class="tag">Java</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ⑤ 技能 -->
+  <section id="skills" class="section">
+    <div class="container">
+      <h2 class="section-title">技能</h2>
+      <div class="skill-cloud">
+        <span class="skill-tag">Java</span>
+        <span class="skill-tag">C语言</span>
+        <span class="skill-tag">51单片机</span>
+        <span class="skill-tag">32单片机</span>
+        <span class="skill-tag">Keil</span>
+        <span class="skill-tag">STM32</span>
+        <span class="skill-tag">Python</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ⑥ 联系方式 -->
+  <section id="contact" class="section section-alt">
+    <div class="container">
+      <h2 class="section-title">联系方式</h2>
+      <ul class="contact-list">
+        <li><span class="contact-label">邮箱</span><a href="mailto:2991733235@qq.com">2991733235@qq.com</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 页脚 -->
+  <footer class="site-footer">
+    <div class="container">
+      <p>© <span id="year">2026</span> 吴瑞成 · 纯 HTML + CSS + JavaScript 构建</p>
+      <p class="footer-note">本页由 AI 辅助开发 · 2026</p>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

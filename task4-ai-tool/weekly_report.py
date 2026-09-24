@@ -2,6 +2,7 @@
 
 逐条输入本周工作要点，调用大模型（OpenAI 兼容接口）生成包含
 「本周完成 / 进行中 / 下周计划 / 风险」四板块的结构化周报。
+支持：正常模式（可保存周报到 report_output/）、temperature 对比实验模式。
 
 运行前需在 .env 中配置：
     DEEPSEEK_API_KEY=sk-...
@@ -12,6 +13,7 @@
 
 import json
 import os
+from datetime import datetime
 
 from dotenv import load_dotenv
 from openai import (
@@ -29,6 +31,8 @@ TIMEOUT_SECONDS = 30
 DEFAULT_BASE_URL = "https://api.deepseek.com/v1"
 CONFIG_FILE = "config.json"
 DEFAULT_TONE = 3
+REPORT_OUTPUT_DIR = "report_output"
+EXPERIMENT_TEMPERATURES = (0.0, 1.2)
 
 # 语气模式 → 写入 system 提示词的风格说明
 TONE_STYLES = {
@@ -92,6 +96,19 @@ def choose_tone(default_tone: int) -> int:
         print("⚠️ 输入无效，请输入 1、2 或 3（直接回车使用默认）。")
 
 
+def choose_mode() -> int:
+    """询问运行模式：1 正常 / 2 实验，回车默认 1，非法重输。"""
+    while True:
+        raw = input(
+            "请选择模式：【1 正常模式｜2 temperature对比实验模式】（直接回车默认 1）："
+        ).strip()
+        if raw == "":
+            return 1
+        if raw in ("1", "2"):
+            return int(raw)
+        print("⚠️ 输入无效，请输入 1 或 2（直接回车使用默认 1）。")
+
+
 def read_work_points() -> list[str]:
     """逐条读取工作要点，空行结束输入。"""
     print("请逐条输入本周工作要点（输入空行结束）：")
@@ -139,6 +156,68 @@ def safe_generate(client: OpenAI, points: list[str], tone: int, temperature: flo
     return None
 
 
+def write_experiment_record(points: list[str], results: list[tuple[float, str | None]]) -> None:
+    """把实验结果（输入要点、温度标记、时间）写入带时间戳的独立 md 文件。"""
+    now = datetime.now()
+    record_time = now.strftime("%Y-%m-%d %H:%M:%S")
+    filename = now.strftime("experiment_%Y%m%d_%H%M%S.md")
+    lines = [
+        "# temperature 对比实验记录",
+        "",
+        f"> 记录时间：{record_time}",
+        "",
+        "## 输入要点",
+        "",
+    ]
+    lines += [f"- {p}" for p in points]
+    lines += ["", ""]
+    for temp, report in results:
+        lines.append(f"## 实验：temperature = {temp}")
+        lines.append("")
+        lines.append(report if report else "（本次生成失败，无输出）")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+    try:
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        print(f"✅ 实验记录已写入 {filename}")
+    except OSError as exc:
+        print(f"⚠️ 实验记录写入失败（{exc}），请检查文件夹写入权限。")
+
+
+def run_temperature_experiment(client: OpenAI, points: list[str], tone: int) -> None:
+    """实验模式：同组要点分别以 temperature=0.0 与 1.2 各调用一次并写记录。"""
+    print("\n=== temperature 对比实验 ===")
+    print("使用同一组工作要点，分别以 temperature=0.0 与 1.2 各调用一次。")
+    results: list[tuple[float, str | None]] = []
+    for temp in EXPERIMENT_TEMPERATURES:
+        print(f"\n--- temperature={temp} 生成中 ---")
+        report = safe_generate(client, points, tone, temp)
+        results.append((temp, report))
+    write_experiment_record(points, results)
+
+
+def save_report_to_file(report: str) -> None:
+    """询问是否保存周报到 report_output/，失败给中文提示不崩溃。"""
+    answer = input("是否保存本次周报到文件？（y 保存 / 其他跳过）：").strip().lower()
+    if answer != "y":
+        return
+    try:
+        os.makedirs(REPORT_OUTPUT_DIR, exist_ok=True)
+    except OSError as exc:
+        print(f"⚠️ 创建文件夹失败（{exc}），本次未保存。")
+        return
+    filename = datetime.now().strftime("report_%Y%m%d_%H%M%S.md")
+    path = os.path.join(REPORT_OUTPUT_DIR, filename)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(report)
+        print(f"✅ 周报已保存到 {path}")
+    except OSError as exc:
+        print(f"⚠️ 保存失败（{exc}），请检查文件夹写入权限。")
+
+
 def main() -> None:
     load_dotenv()
     api_key = os.getenv("DEEPSEEK_API_KEY")
@@ -158,6 +237,15 @@ def main() -> None:
         client = OpenAI(api_key=api_key, base_url=base_url, timeout=TIMEOUT_SECONDS)
 
         print("=== 周报生成器 ===")
+
+        mode = choose_mode()
+        if mode == 2:
+            points = read_work_points()
+            if points:
+                run_temperature_experiment(client, points, tone)
+            else:
+                print("未输入任何要点，已跳过实验。")
+
         while True:
             points = read_work_points()
             if not points:
@@ -168,6 +256,7 @@ def main() -> None:
                     print("\n" + "=" * 40)
                     print(report)
                     print("=" * 40)
+                    save_report_to_file(report)
 
             answer = input("\n是否继续？（输入 y 继续，其他输入退出）：").strip().lower()
             if answer != "y":

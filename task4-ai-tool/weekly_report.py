@@ -8,7 +8,7 @@
     DEEPSEEK_API_KEY=sk-...
     API_BASE_URL=https://api.deepseek.com/v1   # 可选，缺省为 DeepSeek
 
-语气模式与 temperature 保存在 config.json，下次启动自动读取。
+语气模式与 temperature 保存在 config.json，历史记录保存在 history.json。
 """
 
 import json
@@ -33,6 +33,8 @@ CONFIG_FILE = "config.json"
 DEFAULT_TONE = 3
 REPORT_OUTPUT_DIR = "report_output"
 EXPERIMENT_TEMPERATURES = (0.0, 1.2)
+HISTORY_FILE = "history.json"
+TOKEN_PRICE_PER_1K = 0.0015
 
 # 语气模式 → 写入 system 提示词的风格说明
 TONE_STYLES = {
@@ -40,6 +42,9 @@ TONE_STYLES = {
     2: "语气详细：每条要点展开说明背景、具体动作与结果。",
     3: "语气汇报体：采用正式、客观的汇报语气，措辞严谨规范。",
 }
+
+# 语气模式短名（历史展示 / 网页共用）
+TONE_NAMES = {1: "简洁", 2: "详细", 3: "汇报体"}
 
 
 def build_system_prompt(tone: int) -> str:
@@ -82,6 +87,84 @@ def save_config(config: dict) -> None:
         print(f"⚠️ 配置保存失败（{exc}），本次选择不会被记住。")
 
 
+def _load_history() -> list[dict]:
+    """读取 history.json 全部记录；缺失或损坏时返回空列表并给中文提示。"""
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return []
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"⚠️ 历史文件读取失败（{exc}），将按空历史处理。")
+        return []
+    if isinstance(data, list):
+        return data
+    print("⚠️ 历史文件格式异常，将按空历史处理。")
+    return []
+
+
+def append_history_record(input_text: str, output_text: str, total_tokens: int, tone: int) -> None:
+    """追加一条历史记录；文件不存在自动新建，IO 异常中文提示不阻断主流程。"""
+    record = {
+        "request_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "input_text": input_text,
+        "input_length": len(input_text),
+        "output_text": output_text,
+        "total_tokens": int(total_tokens),
+        "tone": int(tone),
+    }
+    records = _load_history()
+    records.append(record)
+    try:
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(records, f, ensure_ascii=False, indent=2)
+    except OSError as exc:
+        print(f"⚠️ 历史记录写入失败（{exc}），本次请求未记录。")
+
+
+def get_recent_history(limit: int = 10) -> list[dict]:
+    """返回最近 N 条历史记录（默认 10 条）。"""
+    records = _load_history()
+    if limit <= 0:
+        return records
+    return records[-limit:]
+
+
+def calc_total_usage() -> dict:
+    """统计全部历史：返回总请求次数、总 token 与估算累计花费。"""
+    records = _load_history()
+    total_tokens = 0
+    for r in records:
+        if isinstance(r, dict):
+            total_tokens += int(r.get("total_tokens", 0))
+    estimated_cost = total_tokens / 1000 * TOKEN_PRICE_PER_1K
+    return {
+        "total_records": len(records),
+        "total_tokens": total_tokens,
+        "estimated_cost": estimated_cost,
+    }
+
+
+def show_history() -> None:
+    """命令行：打印最近 10 条历史记录与累计花费估算。"""
+    records = get_recent_history(10)
+    usage = calc_total_usage()
+    print("\n===== 最近历史记录（最新在前） =====")
+    if not records:
+        print("（暂无历史记录）")
+    else:
+        for i, r in enumerate(reversed(records), 1):
+            tone_name = TONE_NAMES.get(r.get("tone"), "?")
+            print(
+                f"{i}. [{r.get('request_time', '?')}] {tone_name}语气 | "
+                f"输入 {r.get('input_length', 0)} 字 | {r.get('total_tokens', 0)} token"
+            )
+    print(
+        f"\n累计 {usage['total_records']} 次请求 | 总 token {usage['total_tokens']} | "
+        f"估算花费约 {usage['estimated_cost']:.4f} 元"
+    )
+
+
 def choose_tone(default_tone: int) -> int:
     """询问语气模式，回车用默认，非法输入则重新询问。"""
     while True:
@@ -121,8 +204,8 @@ def read_work_points() -> list[str]:
     return points
 
 
-def generate_report(client: OpenAI, points: list[str], tone: int, temperature: float) -> str:
-    """调用模型生成周报，返回正文文本。"""
+def generate_report(client: OpenAI, points: list[str], tone: int, temperature: float) -> tuple[str, int]:
+    """调用模型生成周报，返回 (正文文本, 总 token 消耗)。"""
     user_content = "本周工作要点如下：\n" + "\n".join(f"- {p}" for p in points)
     resp = client.chat.completions.create(
         model=MODEL,
@@ -133,13 +216,17 @@ def generate_report(client: OpenAI, points: list[str], tone: int, temperature: f
         temperature=temperature,
         max_tokens=MAX_TOKENS,
     )
-    return resp.choices[0].message.content or ""
+    content = resp.choices[0].message.content or ""
+    total_tokens = resp.usage.total_tokens if resp.usage else 0
+    return content, total_tokens
 
 
 def safe_generate(client: OpenAI, points: list[str], tone: int, temperature: float) -> str | None:
     """调用模型并分别捕获三类异常；出错打印中文提示并返回 None，不向上抛出。"""
     try:
-        return generate_report(client, points, tone, temperature)
+        content, total_tokens = generate_report(client, points, tone, temperature)
+        append_history_record("\n".join(points), content, total_tokens, tone)
+        return content
     except AuthenticationError:
         print("❌ API Key 无效，请检查 .env 配置。")
     except APITimeoutError:
@@ -258,8 +345,10 @@ def main() -> None:
                     print("=" * 40)
                     save_report_to_file(report)
 
-            answer = input("\n是否继续？（输入 y 继续，其他输入退出）：").strip().lower()
-            if answer != "y":
+            answer = input("\n是否继续？（y 继续 / h 查看历史 / 其他输入退出）：").strip().lower()
+            if answer == "h":
+                show_history()
+            elif answer != "y":
                 print("已退出，再见！")
                 break
     except KeyboardInterrupt:
